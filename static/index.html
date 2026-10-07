@@ -91,20 +91,24 @@
                         <span>🚀 SIMPAN & AKTIFKAN PORT</span>
                     </button>
                     <button class="pc-btn pc-btn-check" id="btn-check-health">
-                        <span>🩺 CEK KESEHATAN SEKARANG</span>
+                        <span>🩺 CEK KESEHATAN</span>
                     </button>
                 </div>
 
                 <div class="pc-button-group" style="margin-top: 8px;">
-                    <button class="pc-btn pc-btn-export" id="btn-copy-endpoints">
-                        <span>📋 SALIN SEMUA ENDPOINT</span>
+                    <button class="pc-btn pc-btn-export" id="btn-copy-live" title="Salin hanya proxy yang statusnya ALIVE (format IP:PORT:USER:PASS)">
+                        <span>📋 COPY ALL LIVE PROXY</span>
                     </button>
-                    <button class="pc-btn pc-btn-danger" id="btn-purge-dead" title="Hapus semua proxy yang mati (status merah) dan matikan portnya">
-                        <span>🗑️ BUANG PROXY DEAD</span>
+                    <button class="pc-btn pc-btn-danger" id="btn-purge-dead" title="Hapus semua proxy DEAD dari daftar dan matikan portnya">
+                        <span>🗑️ DELETE ALL DEAD PROXY</span>
                     </button>
                 </div>
-                <div style="margin-top: 8px; text-align: right;">
-                    <button class="pc-btn" id="btn-clear-text" style="background: transparent; color: var(--text-dim); padding: 4px 8px; font-size: 11px; margin-left: auto;">
+
+                <div style="margin-top: 8px; display: flex; justify-content: space-between; align-items: center;">
+                    <button class="pc-btn" id="btn-copy-endpoints" style="background: transparent; color: var(--text-muted); border: 1px solid var(--border-color); padding: 4px 10px; font-size: 10.5px;">
+                        <span>📋 Salin Semua Port</span>
+                    </button>
+                    <button class="pc-btn" id="btn-clear-text" style="background: transparent; color: var(--text-dim); padding: 4px 8px; font-size: 10.5px;">
                         <span>🧹 Kosongkan Teks</span>
                     </button>
                 </div>

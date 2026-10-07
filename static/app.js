@@ -23,6 +23,7 @@ const proxiesTextarea = document.getElementById('proxies-textarea');
 
 const btnSaveApply = document.getElementById('btn-save-apply');
 const btnCheckHealth = document.getElementById('btn-check-health');
+const btnCopyLive = document.getElementById('btn-copy-live');
 const btnCopyEndpoints = document.getElementById('btn-copy-endpoints');
 const btnPurgeDead = document.getElementById('btn-purge-dead');
 const btnClearText = document.getElementById('btn-clear-text');
@@ -274,6 +275,24 @@ btnCheckHealth.addEventListener('click', async () => {
     }
 });
 
+if (btnCopyLive) {
+    btnCopyLive.addEventListener('click', async () => {
+        try {
+            const res = await fetch('/api/export?alive_only=true');
+            const txt = await res.text();
+            if (!txt || txt.trim() === "") {
+                showToast("⚠️ Belum ada proxy berstatus ALIVE yang siap disalin.", true);
+                return;
+            }
+            await navigator.clipboard.writeText(txt);
+            const count = txt.split('\n').filter(Boolean).length;
+            showToast(`📋 Berhasil menyalin ${count} LIVE PROXY ke Clipboard!`);
+        } catch (e) {
+            showToast("Gagal menyalin live proxy.", true);
+        }
+    });
+}
+
 btnCopyEndpoints.addEventListener('click', async () => {
     try {
         const res = await fetch('/api/export');
@@ -312,7 +331,7 @@ if (btnPurgeDead) {
             showToast("Gagal membuang proxy dead.", true);
         } finally {
             btnPurgeDead.disabled = false;
-            btnPurgeDead.innerHTML = `<span>🗑️ BUANG PROXY DEAD</span>`;
+            btnPurgeDead.innerHTML = `<span>🗑️ DELETE ALL DEAD PROXY</span>`;
         }
     });
 }

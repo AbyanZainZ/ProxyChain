@@ -248,7 +248,7 @@ async def purge_dead_proxies():
     }
 
 @app.get("/api/export", response_class=PlainTextResponse)
-async def export_endpoints():
+async def export_endpoints(alive_only: bool = False):
     srv_ip = get_server_ip()
     lines = []
     stats = relay_manager.get_all_stats()
@@ -256,6 +256,9 @@ async def export_endpoints():
     p = relay_manager.client_pass
 
     for s in stats:
+        up = s.get("upstream", {})
+        if alive_only and up.get("is_alive") is not True:
+            continue
         port = s["port"]
         if u and p:
             lines.append(f"{srv_ip}:{port}:{u}:{p}")
