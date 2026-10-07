@@ -131,7 +131,15 @@ def parse_proxies_text(content: str) -> List[ProxyItem]:
     return items
 
 
-async def check_single_proxy(proxy: ProxyItem, timeout: float = 6.0) -> ProxyItem:
+_IP_REGEX = re.compile(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$')
+
+CHECK_TARGETS = [
+    "http://api.ipify.org",
+    "http://icanhazip.com",
+    "http://checkip.amazonaws.com"
+]
+
+async def check_single_proxy(proxy: ProxyItem, timeout: float = 5.0) -> ProxyItem:
     if not proxy.is_valid:
         proxy.is_alive = False
         proxy.error = "Format proxy tidak valid"
@@ -139,39 +147,39 @@ async def check_single_proxy(proxy: ProxyItem, timeout: float = 6.0) -> ProxyIte
 
     proxy_url = proxy.to_url()
     t0 = time.time()
-    try:
-        # Gunakan ip-api.com/json untuk dapat IP keluar & GeoIP langsung
-        async with httpx.AsyncClient(proxy=proxy_url, timeout=timeout, verify=False) as client:
-            resp = await client.get("http://ip-api.com/json/?fields=status,message,country,city,query", timeout=timeout)
-            elapsed = (time.time() - t0) * 1000.0
-            proxy.last_checked = time.time()
+    last_err = "Check failed"
 
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("status") == "success":
-                    proxy.is_alive = True
-                    proxy.latency_ms = elapsed
-                    proxy.exit_ip = data.get("query", proxy.host)
-                    proxy.country = data.get("country", "Unknown")
-                    proxy.city = data.get("city", "")
-                    proxy.error = None
+    # Gunakan endpoint tanpa rate limit (ipify & icanhazip)
+    for target_url in CHECK_TARGETS:
+        try:
+            async with httpx.AsyncClient(proxy=proxy_url, timeout=timeout, verify=False) as client:
+                resp = await client.get(target_url, timeout=timeout)
+                elapsed = (time.time() - t0) * 1000.0
+                proxy.last_checked = time.time()
+
+                if resp.status_code == 200:
+                    text_ip = resp.text.strip()
+                    # Pastikan balasan adalah IP publik valid (bukan HTML 502 / Error Page)
+                    if _IP_REGEX.match(text_ip):
+                        proxy.is_alive = True
+                        proxy.latency_ms = round(elapsed, 1)
+                        proxy.exit_ip = text_ip
+                        proxy.error = None
+                        return proxy
+                    else:
+                        last_err = "Respon bukan IP valid"
                 else:
-                    proxy.is_alive = True
-                    proxy.latency_ms = elapsed
-                    proxy.exit_ip = data.get("query", proxy.host)
-                    proxy.error = None
+                    last_err = f"HTTP {resp.status_code}"
+        except Exception as e:
+            proxy.last_checked = time.time()
+            err_str = str(e).strip()
+            if "timed out" in err_str.lower() or "timeout" in err_str.lower():
+                last_err = f"Timeout ({timeout}s)"
             else:
-                proxy.is_alive = False
-                proxy.error = f"HTTP {resp.status_code}"
-    except Exception as e:
-        proxy.last_checked = time.time()
-        proxy.is_alive = False
-        err_str = str(e).strip()
-        if "timed out" in err_str.lower() or "timeout" in err_str.lower():
-            proxy.error = f"Timeout ({timeout}s)"
-        else:
-            proxy.error = err_str[:35]
+                last_err = err_str[:35] or "Gagal terkoneksi"
 
+    proxy.is_alive = False
+    proxy.error = last_err
     return proxy
 
 

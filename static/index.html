@@ -106,6 +106,21 @@
                     </button>
                 </div>
 
+                <!-- AUTO-PURGE DEAD PROXY CONTROLS -->
+                <div style="margin-top: 10px; display: flex; align-items: center; justify-content: space-between; background: rgba(0, 229, 255, 0.05); padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(0, 229, 255, 0.2);">
+                    <label class="pc-checkbox-row" style="margin-top: 0; color: #e0f7fa;">
+                        <input type="checkbox" id="chk-auto-purge-box1" checked>
+                        <span>Auto-Delete Dead Proxy tiap:</span>
+                    </label>
+                    <select id="sel-purge-interval" style="background: #091728; color: #00e5ff; border: 1px solid #005b82; border-radius: 4px; padding: 2px 6px; font-size: 11px; outline: none; cursor: pointer;">
+                        <option value="5">5 Menit</option>
+                        <option value="10" selected>10 Menit</option>
+                        <option value="15">15 Menit</option>
+                        <option value="30">30 Menit</option>
+                        <option value="60">60 Menit</option>
+                    </select>
+                </div>
+
                 <div style="margin-top: 8px; display: flex; justify-content: space-between; align-items: center;">
                     <button class="pc-btn pc-btn-outline" id="btn-copy-endpoints" style="padding: 3px 8px; font-size: 10.5px;">
                         <span>📋 Salin Semua Port (Termasuk Pending)</span>
@@ -131,7 +146,12 @@
 
                 <!-- TEXTAREA BOX 2 -->
                 <div class="pc-input-group">
-                    <label style="color: #d1b3ff;">Daftar Proxy Mentah Hasil Scraping:</label>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <label style="color: #d1b3ff; margin-bottom: 0;">Daftar Proxy Mentah Hasil Scraping:</label>
+                        <button class="pc-btn pc-btn-danger" id="btn-staging-clear" style="padding: 2px 8px; font-size: 10.5px; height: 22px;">
+                            <span>🧹 HAPUS / KOSONGKAN BOX 2</span>
+                        </button>
+                    </div>
                     <textarea id="staging-textarea" class="pc-textarea" style="height: 175px; border-color: #31215c;" placeholder="Tempel proxy mentah hasil scraping di sini...&#10;Contoh format bebas:&#10;45.38.107.97:6014:user:pass&#10;socks5|78.29.56.178:1080&#10;http://31.58.9.4:6077"></textarea>
                 </div>
 
@@ -155,9 +175,6 @@
                     <span id="lbl-staging-summary" style="font-size: 11px; color: #b0bec5; font-family: var(--font-mono);">
                         Lab Ready • Belum ada tes
                     </span>
-                    <button class="pc-btn pc-btn-outline" id="btn-staging-clear" style="padding: 3px 8px; font-size: 10.5px;">
-                        <span>🧹 Kosongkan Box 2</span>
-                    </button>
                 </div>
             </div>
         </div>

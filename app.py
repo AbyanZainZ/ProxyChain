@@ -32,8 +32,9 @@ DEFAULT_CONFIG = {
     "client_user": "gemini",
     "client_pass": "gemini",
     "check_target_url": "http://api.ipify.org",
-    "check_timeout": 6.0,
-    "auto_check_interval_minutes": 15
+    "check_timeout": 5.0,
+    "auto_purge_dead": True,
+    "auto_purge_interval_minutes": 10
 }
 
 def load_config() -> dict:
@@ -212,6 +213,25 @@ async def do_transfer_staging_to_active(apply_relay: bool = False) -> dict:
         "message": f"🎉 Berhasil memindahkan {len(new_items)} proxy ALIVE ke Box 1!"
     }
 
+async def auto_purge_background_worker():
+    while True:
+        try:
+            cfg = load_config()
+            interval_min = max(1, int(cfg.get("auto_purge_interval_minutes", 10)))
+            is_enabled = bool(cfg.get("auto_purge_dead", True))
+            await asyncio.sleep(interval_min * 60)
+
+            if is_enabled and active_proxies and not is_checking_active:
+                await run_active_check_task()
+                alive_only = [p for p in active_proxies if p.is_alive is True]
+                removed_count = len(active_proxies) - len(alive_only)
+                if removed_count > 0:
+                    active_proxies = alive_only
+                    save_active_proxies_file("\n".join(p.raw for p in active_proxies if p.raw))
+                    await relay_manager.sync_proxies(active_proxies)
+        except Exception:
+            await asyncio.sleep(30)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global active_proxies, staging_proxies
@@ -226,6 +246,9 @@ async def lifespan(app: FastAPI):
     raw_staging = load_staging_proxies_file()
     staging_proxies = parse_proxies_text(raw_staging)
     staging_summary["total"] = len(staging_proxies)
+
+    # Start 24/7 background auto-maintenance worker
+    asyncio.create_task(auto_purge_background_worker())
 
     yield
 
@@ -256,6 +279,8 @@ class ConfigUpdateRequest(BaseModel):
     client_user: str
     client_pass: str
     proxy_start_port: int
+    auto_purge_dead: Optional[bool] = None
+    auto_purge_interval_minutes: Optional[int] = None
 
 
 # =============================================================================
@@ -280,7 +305,9 @@ async def get_status():
             "client_pass": relay_manager.client_pass,
             "proxy_start_port": relay_manager.start_port,
             "bind_host": relay_manager.bind_host,
-            "dashboard_port": config.get("dashboard_port", 8080)
+            "dashboard_port": config.get("dashboard_port", 8080),
+            "auto_purge_dead": config.get("auto_purge_dead", True),
+            "auto_purge_interval_minutes": config.get("auto_purge_interval_minutes", 10)
         },
         "box1_active": {
             "total": len(active_proxies),
@@ -446,6 +473,10 @@ async def update_config(payload: ConfigUpdateRequest):
     config["client_user"] = payload.client_user.strip()
     config["client_pass"] = payload.client_pass.strip()
     config["proxy_start_port"] = max(1024, min(65000, payload.proxy_start_port))
+    if payload.auto_purge_dead is not None:
+        config["auto_purge_dead"] = payload.auto_purge_dead
+    if payload.auto_purge_interval_minutes is not None:
+        config["auto_purge_interval_minutes"] = max(1, min(1440, payload.auto_purge_interval_minutes))
     save_config(config)
 
     relay_manager.client_user = config["client_user"]

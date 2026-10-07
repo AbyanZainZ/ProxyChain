@@ -32,6 +32,8 @@ const btnActiveCheck = document.getElementById('btn-active-check');
 const btnActivePurgeDead = document.getElementById('btn-active-purge-dead');
 const btnCopyEndpoints = document.getElementById('btn-copy-endpoints');
 const btnClearActive = document.getElementById('btn-clear-active');
+const chkAutoPurgeBox1 = document.getElementById('chk-auto-purge-box1');
+const selPurgeInterval = document.getElementById('sel-purge-interval');
 
 // DOM ELEMENTS — BOX 2 (SCRAPE TESTING LAB)
 const tagStagingCount = document.getElementById('tag-staging-count');
@@ -115,8 +117,26 @@ function updateStagingCount() {
     tagStagingCount.textContent = `${lines.length} Mentah`;
 }
 
+let stagingAutoSaveTimer = null;
+function saveStagingContent() {
+    if (stagingAutoSaveTimer) clearTimeout(stagingAutoSaveTimer);
+    stagingAutoSaveTimer = setTimeout(async () => {
+        try {
+            await fetch('/api/staging/save', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ raw_text: stagingTextarea.value })
+            });
+        } catch (e) {}
+    }, 500);
+}
+
 activeTextarea.addEventListener('input', updateActiveCount);
-stagingTextarea.addEventListener('input', updateStagingCount);
+stagingTextarea.addEventListener('input', () => {
+    updateStagingCount();
+    saveStagingContent();
+});
+stagingTextarea.addEventListener('blur', saveStagingContent);
 
 // FETCH STATUS
 async function fetchStatus() {
@@ -158,6 +178,12 @@ function renderDashboard(data) {
     if (document.activeElement !== cfgUser) cfgUser.value = data.config.client_user || '';
     if (document.activeElement !== cfgPass) cfgPass.value = data.config.client_pass || '';
     if (document.activeElement !== cfgStartPort) cfgStartPort.value = data.config.proxy_start_port || 10001;
+    if (chkAutoPurgeBox1 && document.activeElement !== chkAutoPurgeBox1) {
+        chkAutoPurgeBox1.checked = data.config.auto_purge_dead !== false;
+    }
+    if (selPurgeInterval && document.activeElement !== selPurgeInterval) {
+        selPurgeInterval.value = data.config.auto_purge_interval_minutes || 10;
+    }
 
     // Box 1 Metrics
     const b1 = data.box1_active || {};
@@ -513,17 +539,40 @@ btnStagingTransfer.addEventListener('click', async () => {
 });
 
 btnStagingClear.addEventListener('click', async () => {
-    if (confirm("Kosongkan isi Box 2 (Scrape Lab)?")) {
-        try {
-            await fetch('/api/staging/clear', { method: 'POST' });
-            stagingTextarea.value = '';
-            updateStagingCount();
-            lblStagingSummary.textContent = "Lab Ready • Kosong";
-            showToast("Box 2 telah dikosongkan.");
-            await fetchStatus();
-        } catch (e) {}
+    try {
+        stagingTextarea.value = '';
+        updateStagingCount();
+        lblStagingSummary.textContent = "Lab Ready • Kosong";
+        await fetch('/api/staging/clear', { method: 'POST' });
+        showToast("🧹 Box 2 telah dikosongkan.");
+        await fetchStatus();
+    } catch (e) {
+        showToast("Gagal mengosongkan Box 2.", true);
     }
 });
+
+// AUTO-PURGE CONFIG LISTENERS
+async function saveAutoPurgeConfig() {
+    try {
+        await fetch('/api/config', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                client_user: cfgUser.value.trim(),
+                client_pass: cfgPass.value.trim(),
+                proxy_start_port: parseInt(cfgStartPort.value) || 10001,
+                auto_purge_dead: chkAutoPurgeBox1 ? chkAutoPurgeBox1.checked : true,
+                auto_purge_interval_minutes: selPurgeInterval ? parseInt(selPurgeInterval.value) : 10
+            })
+        });
+        const isAct = chkAutoPurgeBox1 ? chkAutoPurgeBox1.checked : true;
+        const mins = selPurgeInterval ? selPurgeInterval.value : 10;
+        showToast(`Auto-Purge disetel: ${isAct ? 'AKTIF (' + mins + ' menit)' : 'NONAKTIF'}`);
+    } catch (e) {}
+}
+
+if (chkAutoPurgeBox1) chkAutoPurgeBox1.addEventListener('change', saveAutoPurgeConfig);
+if (selPurgeInterval) selPurgeInterval.addEventListener('change', saveAutoPurgeConfig);
 
 // START APPLICATION
 fetchRawData();
