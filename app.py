@@ -57,8 +57,33 @@ def save_proxies_file(content: str):
     with open(PROXIES_PATH, "w", encoding="utf-8") as f:
         f.write(content)
 
+_cached_public_ip = None
+
 def get_server_ip() -> str:
-    # Try detecting primary outbound IP
+    global _cached_public_ip
+    if _cached_public_ip:
+        return _cached_public_ip
+
+    # 1. Prioritaskan deteksi Public IP asli jika berada di VPS / Cloud (Tencent, AWS, GCP, Oracle)
+    import urllib.request
+    endpoints = [
+        "https://api.ipify.org",
+        "https://ifconfig.me/ip",
+        "https://icanhazip.com",
+        "https://checkip.amazonaws.com"
+    ]
+    for url in endpoints:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "curl/7.88.1"})
+            with urllib.request.urlopen(req, timeout=2.0) as resp:
+                detected = resp.read().decode("utf-8").strip()
+                if detected and not detected.startswith(("10.", "172.16.", "172.17.", "172.18.", "172.19.", "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.", "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.", "192.168.", "127.")):
+                    _cached_public_ip = detected
+                    return detected
+        except Exception:
+            pass
+
+    # 2. Fallback ke IP LAN jika offline atau di Localhost murni
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.settimeout(0.5)

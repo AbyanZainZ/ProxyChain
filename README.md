@@ -37,7 +37,13 @@ $$\text{Client / Bot} \longrightarrow \mathbf{HOST:PORT:USER:PASS} \longrightarr
 Jalankan perintah 1 baris berikut di terminal SSH VPS Anda:
 
 ```bash
-git clone https://github.com/<USERNAME>/ProxyChain.git proxychain && cd proxychain && sudo bash deploy_vps.sh
+git clone https://github.com/AbyanZainZ/ProxyChain.git proxychain && cd proxychain && sudo bash deploy_vps.sh
+```
+
+Atau cukup gunakan 1 baris cURL:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/AbyanZainZ/ProxyChain/main/deploy_vps.sh | sudo bash
 ```
 
 Service akan otomatis terdaftar di systemd sebagai `proxychain.service`, menyala 24/7 di latar belakang, dan dashboard dapat langsung diakses via:

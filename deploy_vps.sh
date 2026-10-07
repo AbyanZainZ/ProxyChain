@@ -27,23 +27,22 @@ apt-get update -y
 apt-get install -y python3 python3-pip python3-venv git curl ufw
 
 echo -e "${GREEN}[2/5] Menyiapkan direktori proyek di ${INSTALL_DIR}...${NC}"
-mkdir -p "$INSTALL_DIR"
 
-# Jika dijalankan di dalam folder clone
+# Jika dijalankan di dalam folder clone lokal yang sudah ada file app.py
 if [ -f "app.py" ] && [ -d "static" ]; then
     echo -e "${CYAN}Menyalin file dari direktori saat ini...${NC}"
-    cp -r ./* "$INSTALL_DIR/" 2>/dev/null || cp -r * "$INSTALL_DIR/"
+    mkdir -p "$INSTALL_DIR"
+    cp -a . "$INSTALL_DIR/"
 else
-    # Jika dijalankan via curl langsung dari GitHub
-    REPO_URL="${1}"
-    if [ -z "$REPO_URL" ]; then
-        read -p "Masukkan URL GitHub Repository Anda (cth: https://github.com/username/ProxyChain.git): " REPO_URL
-    fi
+    REPO_URL="${1:-https://github.com/AbyanZainZ/ProxyChain.git}"
     echo -e "${YELLOW}Mengunduh source code dari ${REPO_URL}...${NC}"
-    rm -rf /tmp/proxychain_tmp
-    git clone "$REPO_URL" /tmp/proxychain_tmp
-    cp -r /tmp/proxychain_tmp/* "$INSTALL_DIR/"
-    rm -rf /tmp/proxychain_tmp
+    if [ -d "$INSTALL_DIR/.git" ]; then
+        echo -e "${CYAN}Repository sudah ada di ${INSTALL_DIR}, memperbarui dengan git pull...${NC}"
+        git -C "$INSTALL_DIR" pull
+    else
+        rm -rf "$INSTALL_DIR"
+        git clone "$REPO_URL" "$INSTALL_DIR"
+    fi
 fi
 
 cd "$INSTALL_DIR"
@@ -53,7 +52,8 @@ python3 -m venv venv
 venv/bin/pip install --upgrade pip
 venv/bin/pip install -r requirements.txt
 
-echo -e "${GREEN}[4/5] Mengonfigurasi Firewall (UFW) untuk Port Dashboard & Proxy...${NC}"
+echo -e "${GREEN}[4/5] Mengonfigurasi Firewall (UFW) untuk Port SSH, Dashboard & Proxy...${NC}"
+ufw allow 22/tcp comment "SSH" || true
 ufw allow 8080/tcp comment "ProxyChain Dashboard" || true
 ufw allow 10000:10500/tcp comment "ProxyChain Proxy Ports" || true
 ufw --force enable || true
