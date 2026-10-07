@@ -224,6 +224,29 @@ async def trigger_check(bg_tasks: BackgroundTasks):
     bg_tasks.add_task(run_health_check_task)
     return {"success": True, "message": "Proses health-check dimulai di latar belakang!"}
 
+@app.post("/api/proxies/purge-dead")
+async def purge_dead_proxies():
+    global active_proxies
+    alive_only = [p for p in active_proxies if p.is_alive is True]
+    removed_count = len(active_proxies) - len(alive_only)
+    if removed_count == 0:
+        return {"success": False, "removed": 0, "message": "Tidak ada proxy DEAD yang ditemukan."}
+
+    new_raw_lines = [p.raw_line for p in alive_only]
+    new_raw_text = "\n".join(new_raw_lines)
+    save_proxies_file(new_raw_text)
+
+    active_proxies = alive_only
+    await relay_manager.sync_proxies(active_proxies)
+
+    return {
+        "success": True,
+        "removed": removed_count,
+        "remaining": len(active_proxies),
+        "new_raw_text": new_raw_text,
+        "message": f"Berhasil membuang {removed_count} proxy DEAD! Tersisa {len(active_proxies)} proxy ALIVE."
+    }
+
 @app.get("/api/export", response_class=PlainTextResponse)
 async def export_endpoints():
     srv_ip = get_server_ip()

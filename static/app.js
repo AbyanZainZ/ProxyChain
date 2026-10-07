@@ -24,6 +24,7 @@ const proxiesTextarea = document.getElementById('proxies-textarea');
 const btnSaveApply = document.getElementById('btn-save-apply');
 const btnCheckHealth = document.getElementById('btn-check-health');
 const btnCopyEndpoints = document.getElementById('btn-copy-endpoints');
+const btnPurgeDead = document.getElementById('btn-purge-dead');
 const btnClearText = document.getElementById('btn-clear-text');
 const tableFilter = document.getElementById('table-filter');
 const portsTbody = document.getElementById('ports-tbody');
@@ -288,6 +289,33 @@ btnCopyEndpoints.addEventListener('click', async () => {
         showToast("Gagal menyalin endpoint.", true);
     }
 });
+
+if (btnPurgeDead) {
+    btnPurgeDead.addEventListener('click', async () => {
+        if (!confirm("Hapus semua proxy yang berstatus DEAD (merah)?\n\nPort yang mati akan dinonaktifkan dan daftar proxy akan otomatis diperbarui.")) {
+            return;
+        }
+
+        btnPurgeDead.disabled = true;
+        btnPurgeDead.innerHTML = `<span>⏳ Menghapus...</span>`;
+
+        try {
+            const res = await fetch('/api/proxies/purge-dead', { method: 'POST' });
+            const data = await res.json();
+            showToast(data.message, !data.success);
+            if (data.success && data.new_raw_text !== undefined) {
+                proxiesTextarea.value = data.new_raw_text;
+                updateParseCount();
+                await fetchStatus();
+            }
+        } catch (e) {
+            showToast("Gagal membuang proxy dead.", true);
+        } finally {
+            btnPurgeDead.disabled = false;
+            btnPurgeDead.innerHTML = `<span>🗑️ BUANG PROXY DEAD</span>`;
+        }
+    });
+}
 
 btnClearText.addEventListener('click', () => {
     if (confirm("Kosongkan kotak teks proxy?")) {
