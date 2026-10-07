@@ -1,32 +1,48 @@
 // ==============================================================================
-// PROXYCHAIN WEB DASHBOARD JAVASCRIPT
+// PROXYCHAIN GATEWAY v2 — CYBER COCKPIT JAVASCRIPT
+// Dual-Box Architecture: Box 1 (Active Relay Pool) & Box 2 (Scrape Testing Lab)
 // ==============================================================================
 
 let currentStatusData = null;
 let pollTimer = null;
+let stagingPollTimer = null;
 
-// DOM ELEMENTS
+// DOM ELEMENTS — HEADER & METRICS
 const valServerIp = document.getElementById('val-server-ip');
 const statTotalProxies = document.getElementById('stat-total-proxies');
 const statPortsRange = document.getElementById('stat-ports-range');
 const statAliveProxies = document.getElementById('stat-alive-proxies');
 const statAlivePct = document.getElementById('stat-alive-pct');
+const statStagingTotal = document.getElementById('stat-staging-total');
+const statStagingDesc = document.getElementById('stat-staging-desc');
 const statActiveConns = document.getElementById('stat-active-conns');
 const statDataTransfer = document.getElementById('stat-data-transfer');
-const statTotalConns = document.getElementById('stat-total-conns');
-const tagParseCount = document.getElementById('tag-parse-count');
 
+// DOM ELEMENTS — CONFIG
 const cfgUser = document.getElementById('cfg-user');
 const cfgPass = document.getElementById('cfg-pass');
 const cfgStartPort = document.getElementById('cfg-start-port');
-const proxiesTextarea = document.getElementById('proxies-textarea');
 
-const btnSaveApply = document.getElementById('btn-save-apply');
-const btnCheckHealth = document.getElementById('btn-check-health');
+// DOM ELEMENTS — BOX 1 (ACTIVE RELAY POOL)
+const tagActiveCount = document.getElementById('tag-active-count');
+const activeTextarea = document.getElementById('active-textarea');
+const btnActiveApply = document.getElementById('btn-active-apply');
 const btnCopyLive = document.getElementById('btn-copy-live');
+const btnActiveCheck = document.getElementById('btn-active-check');
+const btnActivePurgeDead = document.getElementById('btn-active-purge-dead');
 const btnCopyEndpoints = document.getElementById('btn-copy-endpoints');
-const btnPurgeDead = document.getElementById('btn-purge-dead');
-const btnClearText = document.getElementById('btn-clear-text');
+const btnClearActive = document.getElementById('btn-clear-active');
+
+// DOM ELEMENTS — BOX 2 (SCRAPE TESTING LAB)
+const tagStagingCount = document.getElementById('tag-staging-count');
+const stagingTextarea = document.getElementById('staging-textarea');
+const chkAutoTransfer = document.getElementById('chk-auto-transfer');
+const btnStagingTest = document.getElementById('btn-staging-test');
+const btnStagingTransfer = document.getElementById('btn-staging-transfer');
+const btnStagingClear = document.getElementById('btn-staging-clear');
+const lblStagingSummary = document.getElementById('lbl-staging-summary');
+
+// DOM ELEMENTS — TABLE & UTILS
 const tableFilter = document.getElementById('table-filter');
 const portsTbody = document.getElementById('ports-tbody');
 const toastEl = document.getElementById('pc-toast');
@@ -51,7 +67,58 @@ function showToast(msg, isError = false) {
     }, 3500);
 }
 
-// FETCH INITIAL CONFIG & STATUS
+// UNIVERSAL CLIPBOARD HELPER (Works on HTTP & HTTPS)
+async function copyToClipboard(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch (e) {}
+    }
+    // Fallback untuk HTTP biasa tanpa SSL
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.position = "fixed";
+    textArea.style.left = "-999999px";
+    textArea.style.top = "-999999px";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        return successful;
+    } catch (err) {
+        document.body.removeChild(textArea);
+        return false;
+    }
+}
+
+// COPY SINGLE ENDPOINT HELPER
+window.copyText = async function(text) {
+    const ok = await copyToClipboard(text);
+    if (ok) {
+        showToast(`📋 Berhasil disalin: ${text}`);
+    } else {
+        showToast(`Gagal menyalin ke clipboard.`, true);
+    }
+};
+
+// COUNT HELPERS
+function updateActiveCount() {
+    const lines = activeTextarea.value.split('\n').filter(l => l.trim().length > 0 && !l.trim().startsWith('#'));
+    tagActiveCount.textContent = `${lines.length} Aktif`;
+}
+
+function updateStagingCount() {
+    const lines = stagingTextarea.value.split('\n').filter(l => l.trim().length > 0 && !l.trim().startsWith('#'));
+    tagStagingCount.textContent = `${lines.length} Mentah`;
+}
+
+activeTextarea.addEventListener('input', updateActiveCount);
+stagingTextarea.addEventListener('input', updateStagingCount);
+
+// FETCH STATUS
 async function fetchStatus() {
     try {
         const res = await fetch('/api/status');
@@ -64,26 +131,23 @@ async function fetchStatus() {
     }
 }
 
-// FETCH RAW PROXIES
-async function fetchRawProxies() {
+// FETCH RAW ACTIVE & STAGING
+async function fetchRawData() {
     try {
-        const res = await fetch('/api/proxies/raw');
-        if (res.ok) {
-            const txt = await res.text();
-            if (proxiesTextarea.value === "") {
-                proxiesTextarea.value = txt;
-                updateParseCount();
-            }
+        const [resAct, resStg] = await Promise.all([
+            fetch('/api/active/raw'),
+            fetch('/api/staging/raw')
+        ]);
+        if (resAct.ok && activeTextarea.value === "") {
+            activeTextarea.value = await resAct.text();
+            updateActiveCount();
+        }
+        if (resStg.ok && stagingTextarea.value === "") {
+            stagingTextarea.value = await resStg.text();
+            updateStagingCount();
         }
     } catch (e) {}
 }
-
-function updateParseCount() {
-    const lines = proxiesTextarea.value.split('\n').filter(l => l.trim().length > 0 && !l.trim().startsWith('#'));
-    tagParseCount.textContent = `${lines.length} Baris`;
-}
-
-proxiesTextarea.addEventListener('input', updateParseCount);
 
 // RENDER DASHBOARD
 function renderDashboard(data) {
@@ -95,37 +159,47 @@ function renderDashboard(data) {
     if (document.activeElement !== cfgPass) cfgPass.value = data.config.client_pass || '';
     if (document.activeElement !== cfgStartPort) cfgStartPort.value = data.config.proxy_start_port || 10001;
 
-    // Metrics
-    const total = data.total_proxies || 0;
-    const alive = data.alive_proxies || 0;
-    statTotalProxies.textContent = total;
-    statAliveProxies.textContent = alive;
-    const pct = total > 0 ? Math.round((alive / total) * 100) : 0;
+    // Box 1 Metrics
+    const b1 = data.box1_active || {};
+    const totalActive = b1.total || 0;
+    const aliveActive = b1.alive || 0;
+    statTotalProxies.textContent = totalActive;
+    statAliveProxies.textContent = aliveActive;
+    const pct = totalActive > 0 ? Math.round((aliveActive / totalActive) * 100) : 0;
     statAlivePct.textContent = `${pct}% Siap Pakai`;
 
-    if (total > 0) {
+    if (totalActive > 0) {
         const startP = data.config.proxy_start_port || 10001;
-        statPortsRange.textContent = `Port ${startP} - ${startP + total - 1}`;
+        statPortsRange.textContent = `Port ${startP} - ${startP + totalActive - 1}`;
     } else {
         statPortsRange.textContent = `Belum ada port aktif`;
     }
 
-    let activeConns = 0;
-    let totalConns = 0;
-    let totalBytes = 0;
+    // Box 2 Metrics
+    const b2 = data.box2_staging || {};
+    const totalStaging = b2.total || 0;
+    statStagingTotal.textContent = totalStaging;
+    statStagingDesc.textContent = `${b2.alive || 0} Alive • ${b2.dead || 0} Dead`;
 
+    if (b2.is_checking) {
+        lblStagingSummary.innerHTML = `<span style="color: #ffd600;">🩺 Sedang menguji proxy hasil scrape...</span>`;
+    } else if (b2.status === "completed") {
+        lblStagingSummary.textContent = `Hasil Tes: ${b2.alive || 0} Alive | ${b2.dead || 0} Dead`;
+    }
+
+    // Traffic & Connections
+    let activeConns = 0;
+    let totalBytes = 0;
     data.ports.forEach(p => {
         activeConns += (p.active_conns || 0);
-        totalConns += (p.total_conns || 0);
         totalBytes += (p.bytes_in || 0) + (p.bytes_out || 0);
     });
 
     statActiveConns.textContent = activeConns;
-    statTotalConns.textContent = `${totalConns} total koneksi`;
     statDataTransfer.textContent = formatBytes(totalBytes);
 
-    if (data.is_checking) {
-        healthStatusText.innerHTML = `<span style="color: #ffd600;">🩺 Sedang memeriksa kesehatan proxy di latar belakang...</span>`;
+    if (b1.is_checking) {
+        healthStatusText.innerHTML = `<span style="color: #00e5ff;">🩺 Sedang memeriksa Box 1 di latar belakang...</span>`;
     } else {
         healthStatusText.textContent = `System ready • Sync tiap 4 detik`;
     }
@@ -138,7 +212,7 @@ function renderTable(ports, srvIp, user, pass) {
     const filter = tableFilter.value.toLowerCase().trim();
 
     if (!ports || ports.length === 0) {
-        portsTbody.innerHTML = `<tr><td colspan="7" class="pc-text-center pc-muted">Belum ada port proxy yang aktif. Klik "Simpan & Aktifkan Port" di sebelah kiri.</td></tr>`;
+        portsTbody.innerHTML = `<tr><td colspan="7" class="pc-text-center pc-muted">Belum ada port proxy aktif. Tambahkan proxy di Box 1 dan klik "JALANKAN / UPDATE RELAY".</td></tr>`;
         return;
     }
 
@@ -150,7 +224,7 @@ function renderTable(ports, srvIp, user, pass) {
     });
 
     if (filtered.length === 0) {
-        portsTbody.innerHTML = `<tr><td colspan="7" class="pc-text-center pc-muted">Tidak ada proxy yang cocok dengan filter pencarian "${filter}".</td></tr>`;
+        portsTbody.innerHTML = `<tr><td colspan="7" class="pc-text-center pc-muted">Tidak ada proxy yang cocok dengan pencarian "${filter}".</td></tr>`;
         return;
     }
 
@@ -215,56 +289,21 @@ tableFilter.addEventListener('input', () => {
     }
 });
 
-// UNIVERSAL CLIPBOARD HELPER (Works on HTTP & HTTPS)
-async function copyToClipboard(text) {
-    if (navigator.clipboard && window.isSecureContext) {
-        try {
-            await navigator.clipboard.writeText(text);
-            return true;
-        } catch (e) {}
-    }
-    // Fallback untuk HTTP IP biasa tanpa SSL
-    const textArea = document.createElement("textarea");
-    textArea.value = text;
-    textArea.style.position = "fixed";
-    textArea.style.left = "-999999px";
-    textArea.style.top = "-999999px";
-    document.body.appendChild(textArea);
-    textArea.focus();
-    textArea.select();
-    try {
-        const successful = document.execCommand('copy');
-        document.body.removeChild(textArea);
-        return successful;
-    } catch (err) {
-        document.body.removeChild(textArea);
-        return false;
-    }
-}
-
-// COPY HELPER
-window.copyText = async function(text) {
-    const ok = await copyToClipboard(text);
-    if (ok) {
-        showToast(`📋 Berhasil disalin: ${text}`);
-    } else {
-        showToast(`Gagal menyalin ke clipboard.`, true);
-    }
-};
-
-// BUTTON ACTIONS
-btnSaveApply.addEventListener('click', async () => {
-    const raw = proxiesTextarea.value.trim();
+// ==============================================================================
+// BOX 1 (PRODUCTION RELAY POOL) ACTIONS
+// ==============================================================================
+btnActiveApply.addEventListener('click', async () => {
+    const raw = activeTextarea.value.trim();
     if (!raw) {
-        showToast("⚠️ Daftar proxy masih kosong!", true);
+        showToast("⚠️ Daftar proxy di Box 1 masih kosong!", true);
         return;
     }
 
-    btnSaveApply.disabled = true;
-    btnSaveApply.innerHTML = `<span>⏳ Menyimpan & Membuka Port...</span>`;
+    btnActiveApply.disabled = true;
+    btnActiveApply.innerHTML = `<span>⏳ Mengaktifkan Port VPS...</span>`;
 
     try {
-        // 1. Save config first
+        // 1. Simpan konfigurasi
         await fetch('/api/config', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -275,125 +314,218 @@ btnSaveApply.addEventListener('click', async () => {
             })
         });
 
-        // 2. Save proxies and trigger re-sync
-        const res = await fetch('/api/proxies', {
+        // 2. Terapkan proxy Box 1 ke relay engine
+        const res = await fetch('/api/active/apply', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ raw_text: raw })
         });
         const result = await res.json();
-        showToast(result.message || "Berhasil diaktifkan!");
+        showToast(result.message || "Relay berhasil diaktifkan!");
         await fetchStatus();
     } catch (e) {
-        showToast("Terjadi kendala koneksi ke server.", true);
+        showToast("Gagal menghubungi server.", true);
     } finally {
-        btnSaveApply.disabled = false;
-        btnSaveApply.innerHTML = `<span>🚀 SIMPAN & AKTIFKAN PORT</span>`;
+        btnActiveApply.disabled = false;
+        btnActiveApply.innerHTML = `<span>🚀 JALANKAN / UPDATE RELAY</span>`;
     }
 });
 
-btnCheckHealth.addEventListener('click', async () => {
+btnCopyLive.addEventListener('click', async () => {
     try {
-        const res = await fetch('/api/check', { method: 'POST' });
-        const data = await res.json();
-        showToast(data.message);
-        await fetchStatus();
-    } catch (e) {
-        showToast("Gagal memicu health-check.", true);
-    }
-});
-
-if (btnCopyLive) {
-    btnCopyLive.addEventListener('click', async () => {
-        try {
-            const res = await fetch('/api/export?alive_only=true');
-            if (!res.ok) {
-                showToast("Gagal mengambil data live proxy dari server.", true);
-                return;
-            }
-            const txt = await res.text();
-            if (!txt || txt.trim() === "") {
-                showToast("⚠️ Belum ada proxy berstatus ALIVE yang siap disalin.", true);
-                return;
-            }
-            const ok = await copyToClipboard(txt);
-            if (ok) {
-                const count = txt.split('\n').filter(Boolean).length;
-                showToast(`📋 Berhasil menyalin ${count} LIVE PROXY ke Clipboard!`);
-            } else {
-                showToast("Browser memblokir akses clipboard.", true);
-            }
-        } catch (e) {
-            showToast("Gagal menyalin live proxy.", true);
-        }
-    });
-}
-
-btnCopyEndpoints.addEventListener('click', async () => {
-    try {
-        const res = await fetch('/api/export');
+        const res = await fetch('/api/export?alive_only=true');
         if (!res.ok) {
-            showToast("Gagal mengambil data endpoint dari server.", true);
+            showToast("Gagal mengambil data live proxy dari server.", true);
             return;
         }
         const txt = await res.text();
         if (!txt || txt.trim() === "") {
-            showToast("Belum ada endpoint proxy aktif untuk disalin.", true);
+            showToast("⚠️ Belum ada proxy berstatus ALIVE yang siap disalin.", true);
             return;
         }
         const ok = await copyToClipboard(txt);
         if (ok) {
             const count = txt.split('\n').filter(Boolean).length;
-            showToast(`📋 ${count} Endpoint berhasil disalin ke Clipboard!`);
+            showToast(`📋 Berhasil menyalin ${count} LIVE PROXY ke Clipboard!`);
         } else {
             showToast("Browser memblokir akses clipboard.", true);
+        }
+    } catch (e) {
+        showToast("Gagal menyalin live proxy.", true);
+    }
+});
+
+btnActiveCheck.addEventListener('click', async () => {
+    try {
+        const res = await fetch('/api/active/check', { method: 'POST' });
+        const data = await res.json();
+        showToast(data.message);
+        await fetchStatus();
+    } catch (e) {
+        showToast("Gagal memulai audit Box 1.", true);
+    }
+});
+
+btnActivePurgeDead.addEventListener('click', async () => {
+    if (!confirm("Hapus semua proxy yang berstatus DEAD dari Box 1?\nPort yang mati akan dimatikan dari VPS.")) return;
+
+    btnActivePurgeDead.disabled = true;
+    btnActivePurgeDead.innerHTML = `<span>⏳ Menghapus...</span>`;
+
+    try {
+        const res = await fetch('/api/active/purge-dead', { method: 'POST' });
+        const data = await res.json();
+        showToast(data.message, !data.success);
+        if (data.success && data.new_raw_text !== undefined) {
+            activeTextarea.value = data.new_raw_text;
+            updateActiveCount();
+            await fetchStatus();
+        }
+    } catch (e) {
+        showToast("Gagal menghapus proxy dead.", true);
+    } finally {
+        btnActivePurgeDead.disabled = false;
+        btnActivePurgeDead.innerHTML = `<span>🗑️ DELETE ALL DEAD PROXY</span>`;
+    }
+});
+
+btnCopyEndpoints.addEventListener('click', async () => {
+    try {
+        const res = await fetch('/api/export?alive_only=false');
+        const txt = await res.text();
+        if (!txt || txt.trim() === "") {
+            showToast("Belum ada port proxy aktif untuk disalin.", true);
+            return;
+        }
+        const ok = await copyToClipboard(txt);
+        if (ok) {
+            const count = txt.split('\n').filter(Boolean).length;
+            showToast(`📋 ${count} Endpoint berhasil disalin!`);
         }
     } catch (e) {
         showToast("Gagal menyalin endpoint.", true);
     }
 });
 
-if (btnPurgeDead) {
-    btnPurgeDead.addEventListener('click', async () => {
-        if (!confirm("Hapus semua proxy yang berstatus DEAD (merah)?\n\nPort yang mati akan dinonaktifkan dan daftar proxy akan otomatis diperbarui.")) {
-            return;
-        }
-
-        btnPurgeDead.disabled = true;
-        btnPurgeDead.innerHTML = `<span>⏳ Menghapus...</span>`;
-
-        try {
-            const res = await fetch('/api/proxies/purge-dead', { method: 'POST' });
-            if (!res.ok) {
-                const errTxt = await res.text();
-                showToast(`Gagal: ${errTxt || 'Server error'}`, true);
-                return;
-            }
-            const data = await res.json();
-            showToast(data.message, !data.success);
-            if (data.success && data.new_raw_text !== undefined) {
-                proxiesTextarea.value = data.new_raw_text;
-                updateParseCount();
-                await fetchStatus();
-            }
-        } catch (e) {
-            showToast("Gagal membuang proxy dead.", true);
-        } finally {
-            btnPurgeDead.disabled = false;
-            btnPurgeDead.innerHTML = `<span>🗑️ DELETE ALL DEAD PROXY</span>`;
-        }
-    });
-}
-
-btnClearText.addEventListener('click', () => {
-    if (confirm("Kosongkan kotak teks proxy?")) {
-        proxiesTextarea.value = '';
-        updateParseCount();
-        showToast("Kotak teks telah dikosongkan.");
+btnClearActive.addEventListener('click', () => {
+    if (confirm("Kosongkan daftar proxy di Box 1?")) {
+        activeTextarea.value = '';
+        updateActiveCount();
+        showToast("Box 1 telah dikosongkan.");
     }
 });
 
-// START POLLING
-fetchRawProxies();
+// ==============================================================================
+// BOX 2 (SCRAPE TESTING LAB / STAGING) ACTIONS
+// ==============================================================================
+btnStagingTest.addEventListener('click', async () => {
+    const raw = stagingTextarea.value.trim();
+    if (!raw) {
+        showToast("⚠️ Box 2 masih kosong! Tempel proxy hasil scrape terlebih dahulu.", true);
+        return;
+    }
+
+    btnStagingTest.disabled = true;
+    btnStagingTest.innerHTML = `<span>⏳ Menguji Proxy Scrape...</span>`;
+    lblStagingSummary.innerHTML = `<span style="color: #ffd600;">🩺 Menjalankan test paralel di Box 2...</span>`;
+
+    try {
+        const res = await fetch('/api/staging/test', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                raw_text: raw,
+                auto_transfer: chkAutoTransfer.checked
+            })
+        });
+        const data = await res.json();
+        showToast(data.message, !data.success);
+
+        // Polling status Box 2
+        pollStagingProgress();
+    } catch (e) {
+        showToast("Gagal memulai pengujian Box 2.", true);
+        btnStagingTest.disabled = false;
+        btnStagingTest.innerHTML = `<span>🩺 TEST PROXY SCRAPE</span>`;
+    }
+});
+
+function pollStagingProgress() {
+    if (stagingPollTimer) clearInterval(stagingPollTimer);
+
+    stagingPollTimer = setInterval(async () => {
+        try {
+            const res = await fetch('/api/staging/status');
+            if (!res.ok) return;
+            const data = await res.json();
+            const sum = data.summary || {};
+
+            if (data.is_checking) {
+                lblStagingSummary.innerHTML = `<span style="color: #ffd600;">🩺 Sedang menguji: ${sum.alive || 0} Alive | ${sum.dead || 0} Dead</span>`;
+            } else {
+                clearInterval(stagingPollTimer);
+                stagingPollTimer = null;
+                btnStagingTest.disabled = false;
+                btnStagingTest.innerHTML = `<span>🩺 TEST PROXY SCRAPE</span>`;
+                lblStagingSummary.textContent = `Selesai: ${sum.alive || 0} Alive | ${sum.dead || 0} Dead`;
+
+                if (chkAutoTransfer.checked && sum.alive > 0) {
+                    showToast(`🎉 Tes selesai! ${sum.alive} proxy ALIVE otomatis ditransfer ke Box 1.`);
+                    // Refresh data Box 1
+                    const actRes = await fetch('/api/active/raw');
+                    if (actRes.ok) {
+                        activeTextarea.value = await actRes.text();
+                        updateActiveCount();
+                    }
+                } else {
+                    showToast(`Tes selesai: ${sum.alive || 0} ALIVE, ${sum.dead || 0} DEAD.`);
+                }
+                await fetchStatus();
+            }
+        } catch (e) {
+            clearInterval(stagingPollTimer);
+            btnStagingTest.disabled = false;
+            btnStagingTest.innerHTML = `<span>🩺 TEST PROXY SCRAPE</span>`;
+        }
+    }, 2000);
+}
+
+btnStagingTransfer.addEventListener('click', async () => {
+    btnStagingTransfer.disabled = true;
+    btnStagingTransfer.innerHTML = `<span>⏳ Mentransfer...</span>`;
+
+    try {
+        const res = await fetch('/api/staging/transfer-live', { method: 'POST' });
+        const data = await res.json();
+        showToast(data.message, !data.success);
+
+        if (data.success && data.new_active_raw !== undefined) {
+            activeTextarea.value = data.new_active_raw;
+            updateActiveCount();
+            await fetchStatus();
+        }
+    } catch (e) {
+        showToast("Gagal memindahkan proxy ke Box 1.", true);
+    } finally {
+        btnStagingTransfer.disabled = false;
+        btnStagingTransfer.innerHTML = `<span>➡️ TRANSFER LIVE KE BOX 1</span>`;
+    }
+});
+
+btnStagingClear.addEventListener('click', async () => {
+    if (confirm("Kosongkan isi Box 2 (Scrape Lab)?")) {
+        try {
+            await fetch('/api/staging/clear', { method: 'POST' });
+            stagingTextarea.value = '';
+            updateStagingCount();
+            lblStagingSummary.textContent = "Lab Ready • Kosong";
+            showToast("Box 2 telah dikosongkan.");
+            await fetchStatus();
+        } catch (e) {}
+    }
+});
+
+// START APPLICATION
+fetchRawData();
 fetchStatus();
 pollTimer = setInterval(fetchStatus, 4000);
