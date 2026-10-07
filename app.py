@@ -232,7 +232,7 @@ async def purge_dead_proxies():
     if removed_count == 0:
         return {"success": False, "removed": 0, "message": "Tidak ada proxy DEAD yang ditemukan."}
 
-    new_raw_lines = [p.raw_line for p in alive_only]
+    new_raw_lines = [p.raw for p in alive_only if p.raw]
     new_raw_text = "\n".join(new_raw_lines)
     save_proxies_file(new_raw_text)
 

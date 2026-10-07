@@ -215,13 +215,41 @@ tableFilter.addEventListener('input', () => {
     }
 });
 
+// UNIVERSAL CLIPBOARD HELPER (Works on HTTP & HTTPS)
+async function copyToClipboard(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch (e) {}
+    }
+    // Fallback untuk HTTP IP biasa tanpa SSL
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.position = "fixed";
+    textArea.style.left = "-999999px";
+    textArea.style.top = "-999999px";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        return successful;
+    } catch (err) {
+        document.body.removeChild(textArea);
+        return false;
+    }
+}
+
 // COPY HELPER
-window.copyText = function(text) {
-    navigator.clipboard.writeText(text).then(() => {
+window.copyText = async function(text) {
+    const ok = await copyToClipboard(text);
+    if (ok) {
         showToast(`📋 Berhasil disalin: ${text}`);
-    }).catch(() => {
+    } else {
         showToast(`Gagal menyalin ke clipboard.`, true);
-    });
+    }
 };
 
 // BUTTON ACTIONS
@@ -279,14 +307,22 @@ if (btnCopyLive) {
     btnCopyLive.addEventListener('click', async () => {
         try {
             const res = await fetch('/api/export?alive_only=true');
+            if (!res.ok) {
+                showToast("Gagal mengambil data live proxy dari server.", true);
+                return;
+            }
             const txt = await res.text();
             if (!txt || txt.trim() === "") {
                 showToast("⚠️ Belum ada proxy berstatus ALIVE yang siap disalin.", true);
                 return;
             }
-            await navigator.clipboard.writeText(txt);
-            const count = txt.split('\n').filter(Boolean).length;
-            showToast(`📋 Berhasil menyalin ${count} LIVE PROXY ke Clipboard!`);
+            const ok = await copyToClipboard(txt);
+            if (ok) {
+                const count = txt.split('\n').filter(Boolean).length;
+                showToast(`📋 Berhasil menyalin ${count} LIVE PROXY ke Clipboard!`);
+            } else {
+                showToast("Browser memblokir akses clipboard.", true);
+            }
         } catch (e) {
             showToast("Gagal menyalin live proxy.", true);
         }
@@ -296,14 +332,22 @@ if (btnCopyLive) {
 btnCopyEndpoints.addEventListener('click', async () => {
     try {
         const res = await fetch('/api/export');
+        if (!res.ok) {
+            showToast("Gagal mengambil data endpoint dari server.", true);
+            return;
+        }
         const txt = await res.text();
         if (!txt || txt.trim() === "") {
             showToast("Belum ada endpoint proxy aktif untuk disalin.", true);
             return;
         }
-        await navigator.clipboard.writeText(txt);
-        const count = txt.split('\n').filter(Boolean).length;
-        showToast(`📋 ${count} Endpoint berhasil disalin ke Clipboard!`);
+        const ok = await copyToClipboard(txt);
+        if (ok) {
+            const count = txt.split('\n').filter(Boolean).length;
+            showToast(`📋 ${count} Endpoint berhasil disalin ke Clipboard!`);
+        } else {
+            showToast("Browser memblokir akses clipboard.", true);
+        }
     } catch (e) {
         showToast("Gagal menyalin endpoint.", true);
     }
@@ -320,6 +364,11 @@ if (btnPurgeDead) {
 
         try {
             const res = await fetch('/api/proxies/purge-dead', { method: 'POST' });
+            if (!res.ok) {
+                const errTxt = await res.text();
+                showToast(`Gagal: ${errTxt || 'Server error'}`, true);
+                return;
+            }
             const data = await res.json();
             showToast(data.message, !data.success);
             if (data.success && data.new_raw_text !== undefined) {
